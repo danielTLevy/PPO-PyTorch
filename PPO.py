@@ -1,8 +1,9 @@
+import numpy as np
 import torch
 import torch.nn as nn
 from torch.distributions import MultivariateNormal
 from torch.distributions import Categorical
-
+import torch_geometric.nn.conv as graph_conv
 
 
 ################################## set device ##################################
@@ -136,6 +137,54 @@ class ActorCritic(nn.Module):
         state_values = self.critic(state)
         
         return action_logprobs, state_values, dist_entropy
+
+
+class NerveNet(nn.Module):
+    def __init__(self, state_dim, action_dim, node_info):
+        super(NerveNet, self).__init__()
+
+        self.n_nodes = len(node_info['tree'])
+        receive_idx = np.array(node_info['receive_idx'])
+        send_idx = np.array(node_info['send_idx'][1])
+        self.edge_idx = torch.LongTensor(np.stack((receive_idx, send_idx)))
+        self.embedder_gather = node_info['input_dict']
+        self.output_gather = node_info['output_list']
+    
+        self.embedding_dim = 5
+        self.node_embedders = {node_type:
+                            nn.Linear(len(self.embedder_gather[node_type]),
+                                      self.embedding_dim)
+                            for node_type in self.embedder_gather}
+        self.gnn = graph_conv.GatedGraphConv(out_channels=64, num_layers=4,
+                                             aggr='add', bias=True)
+        self.action_output = nn.Linear(64, 1)
+
+
+
+class ActorCriticNerveNet(ActorCritic):
+    def __init__(self, state_dim, action_dim, action_std_init, node_info):
+        super(ActorCritic, self).__init__()
+
+        self.node_info = node_info
+        self.action_dim = action_dim
+        self.action_var = torch.full((action_dim,), action_std_init * action_std_init).to(device)
+
+        # actor
+
+            
+        self.actor = NerveNet(self.state_dim, self.action_dim, node_info)
+
+
+        
+        # critic
+        self.critic = nn.Sequential(
+                        nn.Linear(state_dim, 64),
+                        nn.Tanh(),
+                        nn.Linear(64, 64),
+                        nn.Tanh(),
+                        nn.Linear(64, 1)
+                    )
+        
 
 
 class PPO:

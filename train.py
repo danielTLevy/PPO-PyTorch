@@ -1,13 +1,17 @@
+#%%
 import os
 import glob
 import time
 from datetime import datetime
-
 import torch
 import numpy as np
 
 import gym
 import roboschool
+from environments import register
+from graph_util import mujoco_parser
+from graph_util import gnn_util
+
 
 # import pybullet_envs
 
@@ -15,18 +19,17 @@ from PPO import PPO
 
 
 
+#%%
 ################################### Training ###################################
 
 def train():
-
+    #%%
     print("============================================================================================")
 
 
     ####### initialize environment hyperparameters ######
 
-    env_name = "RoboschoolWalker2d-v1"
-
-    has_continuous_action_space = True  # continuous action space; else discrete
+    env_name = "SnakeFive-v1"
 
     max_ep_len = 1000                   # max timesteps in one episode
     max_training_timesteps = int(3e6)   # break training loop if timeteps > max_training_timesteps
@@ -71,13 +74,10 @@ def train():
     state_dim = env.observation_space.shape[0]
 
     # action space dimension
-    if has_continuous_action_space:
-        action_dim = env.action_space.shape[0]
-    else:
-        action_dim = env.action_space.n
+    action_dim = env.action_space.shape[0]
 
 
-
+    #%%
     ###################### logging ######################
 
     #### log files for multiple runs are NOT overwritten
@@ -105,7 +105,7 @@ def train():
 
     #####################################################
 
-
+    #%%
     ################### checkpointing ###################
 
     run_num_pretrained = 0      #### change this to prevent overwriting weights in same env_name folder
@@ -124,7 +124,7 @@ def train():
 
     #####################################################
 
-
+    #%%
     ############# print all hyperparameters #############
 
     print("--------------------------------------------------------------------------------------------")
@@ -143,16 +143,14 @@ def train():
 
     print("--------------------------------------------------------------------------------------------")
 
-    if has_continuous_action_space:
-        print("Initializing a continuous action space policy")
-        print("--------------------------------------------------------------------------------------------")
-        print("starting std of action distribution : ", action_std)
-        print("decay rate of std of action distribution : ", action_std_decay_rate)
-        print("minimum std of action distribution : ", min_action_std)
-        print("decay frequency of std of action distribution : " + str(action_std_decay_freq) + " timesteps")
+    print("Initializing a continuous action space policy")
+    print("--------------------------------------------------------------------------------------------")
+    print("starting std of action distribution : ", action_std)
+    print("decay rate of std of action distribution : ", action_std_decay_rate)
+    print("minimum std of action distribution : ", min_action_std)
+    print("decay frequency of std of action distribution : " + str(action_std_decay_freq) + " timesteps")
 
-    else:
-        print("Initializing a discrete action space policy")
+
 
     print("--------------------------------------------------------------------------------------------")
 
@@ -176,11 +174,37 @@ def train():
     #####################################################
 
     print("============================================================================================")
+    #%%
+    #Get node info:
+    root_connection_option = 'nN,Rn,uE'
+    gnn_output_option = 'unified'
+    gnn_embedding_option = 'noninput_shared'
+    node_info = mujoco_parser.parse_mujoco_graph(
+        env_name, gnn_node_option='nG,nB',
+        root_connection_option=root_connection_option,
+        gnn_output_option=gnn_output_option,
+        gnn_embedding_option=gnn_embedding_option
+    )
 
+
+    # step 2: check for ob size for each node type, construct the node dict
+    node_info = gnn_util.construct_ob_size_dict(node_info)
+
+    # step 3: get the inverse node offsets (used to construct gather idx)
+    node_info = gnn_util.get_inverse_type_offset(node_info, 'node')
+
+    # step 4: get the inverse node offsets (used to gather output idx)
+    node_info = gnn_util.get_inverse_type_offset(node_info,'output')
+
+    # step 5: register existing edge and get the receive and send index
+    node_info = gnn_util.get_receive_send_idx(node_info)
+
+    
+    #%%
     ################# training procedure ################
 
     # initialize a PPO agent
-    ppo_agent = PPO(state_dim, action_dim, lr_actor, lr_critic, gamma, K_epochs, eps_clip, has_continuous_action_space, action_std)
+    ppo_agent = PPO(state_dim, action_dim, lr_actor, lr_critic, gamma, K_epochs, eps_clip, action_std)
 
 
     # track total training time
@@ -230,7 +254,7 @@ def train():
                 ppo_agent.update()
 
             # if continuous action space; then decay action std of ouput action distribution
-            if has_continuous_action_space and time_step % action_std_decay_freq == 0:
+            if time_step % action_std_decay_freq == 0:
                 ppo_agent.decay_action_std(action_std_decay_rate, min_action_std)
 
             # log in logging file
@@ -298,7 +322,6 @@ def train():
 
 
 if __name__ == '__main__':
-
     train()
     
     

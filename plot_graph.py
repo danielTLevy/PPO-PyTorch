@@ -10,7 +10,8 @@ def save_graph():
     # env_name = 'CartPole-v1'
     # env_name = 'LunarLander-v2'
     # env_name = 'BipedalWalker-v2'
-    env_name = 'RoboschoolWalker2d-v1'
+    #env_name = 'RoboschoolWalker2d-v1'
+    env_name = 'SnakeThree-v1'
 
 
     fig_num = 0     #### change this to prevent overwriting figures in same env_name folder
