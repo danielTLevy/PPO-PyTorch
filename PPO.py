@@ -4,7 +4,7 @@ import torch.nn as nn
 from torch.distributions import MultivariateNormal
 from torch.distributions import Categorical
 import torch_geometric.nn.conv as graph_conv
-
+import pdb
 
 ################################## set device ##################################
 
@@ -47,34 +47,23 @@ class RolloutBuffer:
 
 
 class ActorCritic(nn.Module):
-    def __init__(self, state_dim, action_dim, has_continuous_action_space, action_std_init):
+    def __init__(self, state_dim, action_dim, action_std_init):
         super(ActorCritic, self).__init__()
 
-        self.has_continuous_action_space = has_continuous_action_space
 
-        if has_continuous_action_space:
-            self.action_dim = action_dim
-            self.action_var = torch.full((action_dim,), action_std_init * action_std_init).to(device)
+        self.action_dim = action_dim
+        self.action_var = torch.full((action_dim,), action_std_init * action_std_init).to(device)
 
         # actor
-        if has_continuous_action_space :
-            self.actor = nn.Sequential(
-                            nn.Linear(state_dim, 64),
-                            nn.Tanh(),
-                            nn.Linear(64, 64),
-                            nn.Tanh(),
-                            nn.Linear(64, action_dim),
-                            nn.Tanh()
-                        )
-        else:
-            self.actor = nn.Sequential(
-                            nn.Linear(state_dim, 64),
-                            nn.Tanh(),
-                            nn.Linear(64, 64),
-                            nn.Tanh(),
-                            nn.Linear(64, action_dim),
-                            nn.Softmax(dim=-1)
-                        )
+        self.actor = nn.Sequential(
+                        nn.Linear(state_dim, 64),
+                        nn.Tanh(),
+                        nn.Linear(64, 64),
+                        nn.Tanh(),
+                        nn.Linear(64, action_dim),
+                        nn.Tanh()
+                    )
+
 
         
         # critic
@@ -87,14 +76,7 @@ class ActorCritic(nn.Module):
                     )
         
     def set_action_std(self, new_action_std):
-
-        if self.has_continuous_action_space:
-            self.action_var = torch.full((self.action_dim,), new_action_std * new_action_std).to(device)
-        else:
-            print("--------------------------------------------------------------------------------------------")
-            print("WARNING : Calling ActorCritic::set_action_std() on discrete action space policy")
-            print("--------------------------------------------------------------------------------------------")
-
+        self.action_var = torch.full((self.action_dim,), new_action_std * new_action_std).to(device)
 
     def forward(self):
         raise NotImplementedError
@@ -102,13 +84,10 @@ class ActorCritic(nn.Module):
 
     def act(self, state):
 
-        if self.has_continuous_action_space:
-            action_mean = self.actor(state)
-            cov_mat = torch.diag(self.action_var).unsqueeze(dim=0)
-            dist = MultivariateNormal(action_mean, cov_mat)
-        else:
-            action_probs = self.actor(state)
-            dist = Categorical(action_probs)
+        action_mean = self.actor(state)
+        cov_mat = torch.diag(self.action_var).unsqueeze(dim=0)
+        dist = MultivariateNormal(action_mean, cov_mat)
+
 
         action = dist.sample()
         action_logprob = dist.log_prob(action)
@@ -117,21 +96,17 @@ class ActorCritic(nn.Module):
     
 
     def evaluate(self, state, action):
+        action_mean = self.actor(state)
+        
+        action_var = self.action_var.expand_as(action_mean)
+        cov_mat = torch.diag_embed(action_var).to(device)
+        dist = MultivariateNormal(action_mean, cov_mat)
+        
+        # For Single Action Environments.
+        if self.action_dim == 1:
+            action = action.reshape(-1, self.action_dim)
 
-        if self.has_continuous_action_space:
-            action_mean = self.actor(state)
-            
-            action_var = self.action_var.expand_as(action_mean)
-            cov_mat = torch.diag_embed(action_var).to(device)
-            dist = MultivariateNormal(action_mean, cov_mat)
-            
-            # For Single Action Environments.
-            if self.action_dim == 1:
-                action = action.reshape(-1, self.action_dim)
 
-        else:
-            action_probs = self.actor(state)
-            dist = Categorical(action_probs)
         action_logprobs = dist.log_prob(action)
         dist_entropy = dist.entropy()
         state_values = self.critic(state)
@@ -139,43 +114,116 @@ class ActorCritic(nn.Module):
         return action_logprobs, state_values, dist_entropy
 
 
+class Embedder(nn.Module):
+    def __init__(self, state_dim, embedding_dim, n_nodes, input_dict,
+                                 ob_size_dict, node_type_dict, node_to_type):
+        super(Embedder, self).__init__()
+        self.n_nodes = n_nodes
+        self.embedding_dim = embedding_dim
+        self.ob_size_dict = ob_size_dict
+        self.node_to_type = node_to_type
+        self.embedder_gather = {k:  torch.LongTensor(v)
+                                    for k, v in input_dict.items()}
+        self.node_embedders = {node_type:
+                            nn.Linear(ob_size_dict[node_type],  embedding_dim)
+                            for node_type in node_type_dict}
+    
+    def forward(self, state):
+        embedded = torch.zeros(state.shape[0], self.n_nodes, self.embedding_dim)
+        for node, obs_idx in self.embedder_gather.items():
+            node_input = torch.index_select(state, 1, obs_idx)
+            embedded[:, node, :] =  self.node_embedders[self.node_to_type[node]](node_input)
+        return embedded
+    
+    
+class GGNN(nn.Module):
+    def __init__(self, hidden_dim, edge_idx):
+        super(GGNN, self).__init__()
+        self.hidden_dim = hidden_dim
+        self.edge_idx = edge_idx
+        self.n_edges = edge_idx.shape[1]
+        self.gnn = graph_conv.GatedGraphConv(out_channels=hidden_dim, num_layers=4,
+                                             aggr='add', bias=True)
+    
+    def forward(self, embedding):
+        batch_size = embedding.shape[0]
+        n_nodes = embedding.shape[1]
+        embedding_dim = embedding.shape[2]
+        
+        embedding_batched = embedding.view(batch_size*n_nodes, embedding_dim)
+        #batch = torch.arange(n_nodes).repeat_interleave(n_nodes)
+
+        batch_offset = n_nodes*torch.arange(batch_size).repeat_interleave(self.n_edges)
+        edge_idx_batched = self.edge_idx.repeat(1, batch_size) + batch_offset
+        
+        out = self.gnn(embedding_batched, edge_idx_batched)
+        return out.view(batch_size, n_nodes, -1)
+
+        
+class ActionPredictor(nn.Module):
+    def __init__(self, hidden_dim, action_dim, output_list):
+        super(ActionPredictor, self).__init__()
+
+        self.action_dim = action_dim
+        # List of nodes that have outputs
+        self.output_list = torch.LongTensor(output_list)
+        # TODO: this assumes each output body part has only one action
+        self.action_output = nn.Linear(hidden_dim, 1)
+        self.tanh = nn.Tanh()
+    
+    
+    def forward(self, X):
+        X_output = torch.index_select(X, 1, self.output_list)
+        return self.tanh(self.action_output(X_output).squeeze())
+
+
 class NerveNet(nn.Module):
     def __init__(self, state_dim, action_dim, node_info):
         super(NerveNet, self).__init__()
 
         self.n_nodes = len(node_info['tree'])
+
+
+        self.embedder = Embedder(state_dim, embedding_dim=5, n_nodes=self.n_nodes,
+                                 input_dict=node_info['input_dict'],
+                                 ob_size_dict=node_info['ob_size_dict'],
+                                 node_type_dict=node_info['node_type_dict'],
+                                 node_to_type=node_info['node_to_type'])
+
         receive_idx = np.array(node_info['receive_idx'])
         send_idx = np.array(node_info['send_idx'][1])
         self.edge_idx = torch.LongTensor(np.stack((receive_idx, send_idx)))
-        self.embedder_gather = node_info['input_dict']
-        self.output_gather = node_info['output_list']
+
+        hidden_dim = 64
+        self.gnn = GGNN(hidden_dim, self.edge_idx)
+
+        self.action_predictor = ActionPredictor(hidden_dim, action_dim,
+                                                output_list=node_info['output_list'])
+
+    def forward(self, state):
+        if state.ndim == 1:
+            state = state.unsqueeze(0)
+        embedded = self.embedder(state)
+        gnn_out = self.gnn(embedded)
+        return self.action_predictor(gnn_out)
     
-        self.embedding_dim = 5
-        self.node_embedders = {node_type:
-                            nn.Linear(len(self.embedder_gather[node_type]),
-                                      self.embedding_dim)
-                            for node_type in self.embedder_gather}
-        self.gnn = graph_conv.GatedGraphConv(out_channels=64, num_layers=4,
-                                             aggr='add', bias=True)
-        self.action_output = nn.Linear(64, 1)
 
 
 
 class ActorCriticNerveNet(ActorCritic):
     def __init__(self, state_dim, action_dim, action_std_init, node_info):
-        super(ActorCritic, self).__init__()
-
-        self.node_info = node_info
+        nn.Module.__init__(self)
+        self.state_dim = state_dim
         self.action_dim = action_dim
+        self.action_std_init = action_std_init
+        self.node_info = node_info
+
         self.action_var = torch.full((action_dim,), action_std_init * action_std_init).to(device)
 
-        # actor
-
-            
+        # actor            
         self.actor = NerveNet(self.state_dim, self.action_dim, node_info)
 
 
-        
         # critic
         self.critic = nn.Sequential(
                         nn.Linear(state_dim, 64),
@@ -184,16 +232,14 @@ class ActorCriticNerveNet(ActorCritic):
                         nn.Tanh(),
                         nn.Linear(64, 1)
                     )
-        
+
 
 
 class PPO:
-    def __init__(self, state_dim, action_dim, lr_actor, lr_critic, gamma, K_epochs, eps_clip, has_continuous_action_space, action_std_init=0.6):
+    def __init__(self, state_dim, action_dim, lr_actor, lr_critic, gamma, K_epochs, eps_clip, action_std_init=0.6, node_info=None):
 
-        self.has_continuous_action_space = has_continuous_action_space
 
-        if has_continuous_action_space:
-            self.action_std = action_std_init
+        self.action_std = action_std_init
 
         self.gamma = gamma
         self.eps_clip = eps_clip
@@ -201,13 +247,14 @@ class PPO:
         
         self.buffer = RolloutBuffer()
 
-        self.policy = ActorCritic(state_dim, action_dim, has_continuous_action_space, action_std_init).to(device)
+    
+        self.policy = ActorCriticNerveNet(state_dim, action_dim, action_std_init, node_info).to(device)
         self.optimizer = torch.optim.Adam([
                         {'params': self.policy.actor.parameters(), 'lr': lr_actor},
                         {'params': self.policy.critic.parameters(), 'lr': lr_critic}
                     ])
 
-        self.policy_old = ActorCritic(state_dim, action_dim, has_continuous_action_space, action_std_init).to(device)
+        self.policy_old = ActorCriticNerveNet(state_dim, action_dim, action_std_init, node_info).to(device)
         self.policy_old.load_state_dict(self.policy.state_dict())
         
         self.MseLoss = nn.MSELoss()
@@ -215,59 +262,39 @@ class PPO:
 
     def set_action_std(self, new_action_std):
         
-        if self.has_continuous_action_space:
-            self.action_std = new_action_std
-            self.policy.set_action_std(new_action_std)
-            self.policy_old.set_action_std(new_action_std)
-        
-        else:
-            print("--------------------------------------------------------------------------------------------")
-            print("WARNING : Calling PPO::set_action_std() on discrete action space policy")
-            print("--------------------------------------------------------------------------------------------")
+        self.action_std = new_action_std
+        self.policy.set_action_std(new_action_std)
+        self.policy_old.set_action_std(new_action_std)
 
 
     def decay_action_std(self, action_std_decay_rate, min_action_std):
         print("--------------------------------------------------------------------------------------------")
 
-        if self.has_continuous_action_space:
-            self.action_std = self.action_std - action_std_decay_rate
-            self.action_std = round(self.action_std, 4)
-            if (self.action_std <= min_action_std):
-                self.action_std = min_action_std
-                print("setting actor output action_std to min_action_std : ", self.action_std)
-            else:
-                print("setting actor output action_std to : ", self.action_std)
-            self.set_action_std(self.action_std)
-
+        self.action_std = self.action_std - action_std_decay_rate
+        self.action_std = round(self.action_std, 4)
+        if (self.action_std <= min_action_std):
+            self.action_std = min_action_std
+            print("setting actor output action_std to min_action_std : ", self.action_std)
         else:
-            print("WARNING : Calling PPO::decay_action_std() on discrete action space policy")
+            print("setting actor output action_std to : ", self.action_std)
+        self.set_action_std(self.action_std)
+
 
         print("--------------------------------------------------------------------------------------------")
 
 
     def select_action(self, state):
 
-        if self.has_continuous_action_space:
-            with torch.no_grad():
-                state = torch.FloatTensor(state).to(device)
-                action, action_logprob = self.policy_old.act(state)
+        with torch.no_grad():
+            state = torch.FloatTensor(state).to(device)
+            action, action_logprob = self.policy_old.act(state)
 
-            self.buffer.states.append(state)
-            self.buffer.actions.append(action)
-            self.buffer.logprobs.append(action_logprob)
+        self.buffer.states.append(state)
+        self.buffer.actions.append(action)
+        self.buffer.logprobs.append(action_logprob)
 
-            return action.detach().cpu().numpy().flatten()
+        return action.detach().cpu().numpy().flatten()
 
-        else:
-            with torch.no_grad():
-                state = torch.FloatTensor(state).to(device)
-                action, action_logprob = self.policy_old.act(state)
-            
-            self.buffer.states.append(state)
-            self.buffer.actions.append(action)
-            self.buffer.logprobs.append(action_logprob)
-
-            return action.item()
 
 
     def update(self):

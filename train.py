@@ -29,7 +29,7 @@ def train():
 
     ####### initialize environment hyperparameters ######
 
-    env_name = "SnakeFive-v1"
+    env_name = "SnakeThree-v1"
 
     max_ep_len = 1000                   # max timesteps in one episode
     max_training_timesteps = int(3e6)   # break training loop if timeteps > max_training_timesteps
@@ -179,32 +179,18 @@ def train():
     root_connection_option = 'nN,Rn,uE'
     gnn_output_option = 'unified'
     gnn_embedding_option = 'noninput_shared'
-    node_info = mujoco_parser.parse_mujoco_graph(
-        env_name, gnn_node_option='nG,nB',
-        root_connection_option=root_connection_option,
-        gnn_output_option=gnn_output_option,
-        gnn_embedding_option=gnn_embedding_option
-    )
-
-
-    # step 2: check for ob size for each node type, construct the node dict
-    node_info = gnn_util.construct_ob_size_dict(node_info)
-
-    # step 3: get the inverse node offsets (used to construct gather idx)
-    node_info = gnn_util.get_inverse_type_offset(node_info, 'node')
-
-    # step 4: get the inverse node offsets (used to gather output idx)
-    node_info = gnn_util.get_inverse_type_offset(node_info,'output')
-
-    # step 5: register existing edge and get the receive and send index
-    node_info = gnn_util.get_receive_send_idx(node_info)
+    
+    node_info = gnn_util.get_all_node_info(env_name, gnn_node_option='nG,nB',
+                                           root_connection_option=root_connection_option,
+                                           gnn_output_option=gnn_output_option,
+                                           gnn_embedding_option=gnn_embedding_option)
 
     
     #%%
     ################# training procedure ################
 
     # initialize a PPO agent
-    ppo_agent = PPO(state_dim, action_dim, lr_actor, lr_critic, gamma, K_epochs, eps_clip, action_std)
+    ppo_agent = PPO(state_dim, action_dim, lr_actor, lr_critic, gamma, K_epochs, eps_clip, action_std, node_info)
 
 
     # track total training time

@@ -17,6 +17,36 @@ __all__ = ['io_size_check']
 _BASE_PATH = init_path.get_abs_base_dir()
 
 
+def get_all_node_info(env_name, gnn_node_option, root_connection_option,
+                      gnn_output_option, gnn_embedding_option):
+
+    node_info = mujoco_parser.parse_mujoco_graph(
+        env_name, gnn_node_option=gnn_node_option,
+        root_connection_option=root_connection_option,
+        gnn_output_option=gnn_output_option,
+        gnn_embedding_option=gnn_embedding_option
+    )
+
+    # step 2: check for ob size for each node type, construct the node dict
+    node_info = construct_ob_size_dict(node_info)
+
+    # step 3: get the inverse node offsets (used to construct gather idx)
+    node_info = get_inverse_type_offset(node_info, 'node')
+
+    # step 4: get the inverse node offsets (used to gather output idx)
+    node_info = get_inverse_type_offset(node_info,'output')
+
+    # step 5: register existing edge and get the receive and send index
+    node_info = get_receive_send_idx(node_info)
+    
+    # step 6: Get inverse node type indices
+    node_to_type = {}
+    for node_type,nodes in node_info['node_type_dict'].items():
+        for node in nodes:
+            node_to_type[node] = node_type
+    node_info['node_to_type'] = node_to_type
+    return node_info
+
 def io_size_check(input_size, output_size, node_info, is_baseline):
     '''
         @brief:
