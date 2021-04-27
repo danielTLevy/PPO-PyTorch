@@ -125,7 +125,7 @@ class Embedder(nn.Module):
         self.embedder_gather = {k:  torch.LongTensor(v).to(device)
                                     for k, v in input_dict.items()}
         self.node_embedders = {node_type:
-                            nn.Linear(ob_size_dict[node_type],  embedding_dim)
+                            nn.Linear(ob_size_dict[node_type],  embedding_dim).to(device)
                             for node_type in node_type_dict}
 
     def forward(self, state):
