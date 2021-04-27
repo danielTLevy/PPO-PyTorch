@@ -36,7 +36,7 @@ def train(args):
 
     ####### initialize environment hyperparameters ######
 
-    env_name = "SnakeThree-v1"
+    env_name = args.env
 
     max_ep_len = 1000                   # max timesteps in one episode
     max_training_timesteps = int(1e6)   # break training loop if timeteps > max_training_timesteps
@@ -317,8 +317,6 @@ def train(args):
 if __name__ == '__main__':
     args = parse_args()
     train(args)
-    
-    
     
     
     

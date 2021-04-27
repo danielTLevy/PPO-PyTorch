@@ -372,13 +372,21 @@ class PPO:
     
     def save(self, checkpoint_path):
         torch.save(self.policy_old.state_dict(), checkpoint_path)
+        
    
 
+    def save_policy(self, checkpoint_path):
+        policy_checkpoint_path = checkpoint_path[:-4] + '_policy.pth'
+        torch.save(self.policy_old.actor.state_dict(), policy_checkpoint_path)
+
+        
     def load(self, checkpoint_path):
         self.policy_old.load_state_dict(torch.load(checkpoint_path, map_location=lambda storage, loc: storage))
         self.policy.load_state_dict(torch.load(checkpoint_path, map_location=lambda storage, loc: storage))
+
+    def load_policy(self, checkpoint_path):
+        policy_checkpoint_path = checkpoint_path[:-4] + '_policy.pth'
+        self.policy_old.actor.load_state_dict(torch.load(policy_checkpoint_path,map_location=lambda storage, loc: storage))
         
-        
-       
 
 
