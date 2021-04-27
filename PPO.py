@@ -5,7 +5,7 @@ from torch.distributions import MultivariateNormal
 from torch.distributions import Categorical
 import torch_geometric.nn.conv as graph_conv
 import pdb
-
+from collections import OrderedDict
 ################################## set device ##################################
 
 print("============================================================================================")
@@ -181,16 +181,31 @@ class ActionPredictor(nn.Module):
 
 class Conv1D(nn.Module):
     def __init__(self, embedding_dim, hidden_dim):
-        self.conv1 = nn.Conv1d(embedding_dim, )
+        super(Conv1D, self).__init__()
+        self.convs = nn.Sequential(OrderedDict([
+                ('conv1', nn.Conv1d(embedding_dim, hidden_dim, kernel_size=3, stride=1, padding=2)),
+                ('relu1', nn.ReLU()),
+                ('conv2', nn.Conv1d(hidden_dim, hidden_dim, 3, 1, 2)),
+                ('relu2', nn.ReLU()),
+                ('conv3', nn.Conv1d(hidden_dim, hidden_dim, 3, 1, 2)),
+                ('tanh', nn.Tanh())
+            ]))
+
+    def forward(self, embedding):
+        # Convolutions done along node dimension
+        return self.convs(embedding.transpose(-2, -1)).transpose(-2, -1)
+        
 
 class NerveNet(nn.Module):
     def __init__(self, state_dim, action_dim, node_info):
         super(NerveNet, self).__init__()
 
         self.n_nodes = len(node_info['tree'])
+        self.embedding_dim = 5
+        self.hidden_dim = 64
 
-
-        self.embedder = Embedder(state_dim, embedding_dim=5, n_nodes=self.n_nodes,
+        self.embedder = Embedder(state_dim, embedding_dim=self.embedding_dim,
+                                 n_nodes=self.n_nodes,
                                  input_dict=node_info['input_dict'],
                                  ob_size_dict=node_info['ob_size_dict'],
                                  node_type_dict=node_info['node_type_dict'],
@@ -200,10 +215,9 @@ class NerveNet(nn.Module):
         send_idx = np.array(node_info['send_idx'][1])
         self.edge_idx = torch.LongTensor(np.stack((receive_idx, send_idx))).to(device)
 
-        hidden_dim = 64
-        self.gnn = GGNN(hidden_dim, self.edge_idx).to(device)
-
-        self.action_predictor = ActionPredictor(hidden_dim, action_dim,
+        #self.gnn = GGNN(self.hidden_dim, self.edge_idx).to(device)
+        self.gnn = Conv1D(self.embedding_dim, self.hidden_dim)
+        self.action_predictor = ActionPredictor(self.hidden_dim, action_dim,
                                                 output_list=node_info['output_list']).to(device)
 
     def forward(self, state):
