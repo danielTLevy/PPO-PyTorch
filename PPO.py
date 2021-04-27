@@ -122,14 +122,14 @@ class Embedder(nn.Module):
         self.embedding_dim = embedding_dim
         self.ob_size_dict = ob_size_dict
         self.node_to_type = node_to_type
-        self.embedder_gather = {k:  torch.LongTensor(v)
+        self.embedder_gather = {k:  torch.LongTensor(v).to(device)
                                     for k, v in input_dict.items()}
         self.node_embedders = {node_type:
                             nn.Linear(ob_size_dict[node_type],  embedding_dim)
                             for node_type in node_type_dict}
-    
+
     def forward(self, state):
-        embedded = torch.zeros(state.shape[0], self.n_nodes, self.embedding_dim)
+        embedded = torch.zeros(state.shape[0], self.n_nodes, self.embedding_dim).to(device)
         for node, obs_idx in self.embedder_gather.items():
             node_input = torch.index_select(state, 1, obs_idx)
             embedded[:, node, :] =  self.node_embedders[self.node_to_type[node]](node_input)
@@ -153,7 +153,7 @@ class GGNN(nn.Module):
         embedding_batched = embedding.view(batch_size*n_nodes, embedding_dim)
         #batch = torch.arange(n_nodes).repeat_interleave(n_nodes)
 
-        batch_offset = n_nodes*torch.arange(batch_size).repeat_interleave(self.n_edges)
+        batch_offset = n_nodes*torch.arange(batch_size).repeat_interleave(self.n_edges).to(device)
         edge_idx_batched = self.edge_idx.repeat(1, batch_size) + batch_offset
         
         out = self.gnn(embedding_batched, edge_idx_batched)
@@ -166,7 +166,7 @@ class ActionPredictor(nn.Module):
 
         self.action_dim = action_dim
         # List of nodes that have outputs
-        self.output_list = torch.LongTensor(output_list)
+        self.output_list = torch.LongTensor(output_list).to(device)
         # TODO: this assumes each output body part has only one action
         self.action_output = nn.Linear(hidden_dim, 1)
         self.tanh = nn.Tanh()
@@ -192,7 +192,7 @@ class NerveNet(nn.Module):
 
         receive_idx = np.array(node_info['receive_idx'])
         send_idx = np.array(node_info['send_idx'][1])
-        self.edge_idx = torch.LongTensor(np.stack((receive_idx, send_idx)))
+        self.edge_idx = torch.LongTensor(np.stack((receive_idx, send_idx))).to(device)
 
         hidden_dim = 64
         self.gnn = GGNN(hidden_dim, self.edge_idx)
