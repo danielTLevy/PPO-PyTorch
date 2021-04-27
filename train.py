@@ -10,7 +10,7 @@ import gym
 # import roboschool
 from environments import register
 from graph_util import gnn_util
-
+import argparse
 # import pybullet_envs
 
 from PPO import PPO
@@ -20,7 +20,16 @@ from PPO import PPO
 #%%
 ################################### Training ###################################
 
-def train():
+
+def parse_args():
+     parser = argparse.ArgumentParser(description='Train')
+     parser.add_argument('--run', type=int, help='unique run number', default='100')
+     parser.add_argument('--env', type=str, help='training environment', 
+                         default='SnakeThree-v1')
+     args = parser.parse_args()
+     return args
+
+def train(args):
     #%%
     print("============================================================================================")
 
@@ -106,7 +115,7 @@ def train():
     #%%
     ################### checkpointing ###################
 
-    run_num_pretrained = 0      #### change this to prevent overwriting weights in same env_name folder
+    run_num_pretrained = args.run      #### change this to prevent overwriting weights in same env_name folder
 
     directory = "PPO_preTrained"
     if not os.path.exists(directory):
@@ -306,7 +315,8 @@ def train():
 
 
 if __name__ == '__main__':
-    train()
+    args = parse_args()
+    train(args)
     
     
     
