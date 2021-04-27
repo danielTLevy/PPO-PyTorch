@@ -188,17 +188,17 @@ class NerveNet(nn.Module):
                                  input_dict=node_info['input_dict'],
                                  ob_size_dict=node_info['ob_size_dict'],
                                  node_type_dict=node_info['node_type_dict'],
-                                 node_to_type=node_info['node_to_type'])
+                                 node_to_type=node_info['node_to_type']).to(device)
 
         receive_idx = np.array(node_info['receive_idx'])
         send_idx = np.array(node_info['send_idx'][1])
         self.edge_idx = torch.LongTensor(np.stack((receive_idx, send_idx))).to(device)
 
         hidden_dim = 64
-        self.gnn = GGNN(hidden_dim, self.edge_idx)
+        self.gnn = GGNN(hidden_dim, self.edge_idx).to(device)
 
         self.action_predictor = ActionPredictor(hidden_dim, action_dim,
-                                                output_list=node_info['output_list'])
+                                                output_list=node_info['output_list']).to(device)
 
     def forward(self, state):
         if state.ndim == 1:
@@ -221,7 +221,7 @@ class ActorCriticNerveNet(ActorCritic):
         self.action_var = torch.full((action_dim,), action_std_init * action_std_init).to(device)
 
         # actor            
-        self.actor = NerveNet(self.state_dim, self.action_dim, node_info)
+        self.actor = NerveNet(self.state_dim, self.action_dim, node_info).to(device)
 
 
         # critic
