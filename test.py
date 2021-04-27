@@ -2,12 +2,14 @@ import os
 import glob
 import time
 from datetime import datetime
+from environments import register
+from graph_util import gnn_util
 
 import torch
 import numpy as np
 
 import gym
-import roboschool
+#import roboschool
 
 # import pybullet_envs
 
@@ -42,8 +44,7 @@ def test():
     # action_std = 0.1            # set same std for action distribution which was used while saving
 
 
-    env_name = "RoboschoolWalker2d-v1"
-    has_continuous_action_space = True
+    env_name = "SnakeThree-v1"
     max_ep_len = 1000           # max timesteps in one episode
     action_std = 0.1            # set same std for action distribution which was used while saving
 
@@ -52,7 +53,7 @@ def test():
     frame_delay = 0             # if required; add delay b/w frames
 
 
-    total_test_episodes = 10    # total num of testing episodes
+    total_test_episodes = 2    # total num of testing episodes
 
     K_epochs = 80               # update policy for K epochs
     eps_clip = 0.2              # clip parameter for PPO
@@ -70,15 +71,19 @@ def test():
     state_dim = env.observation_space.shape[0]
 
     # action space dimension
-    if has_continuous_action_space:
-        action_dim = env.action_space.shape[0]
-    else:
-        action_dim = env.action_space.n
+    action_dim = env.action_space.shape[0]
 
 
     # initialize a PPO agent
-    ppo_agent = PPO(state_dim, action_dim, lr_actor, lr_critic, gamma, K_epochs, eps_clip, has_continuous_action_space, action_std)
-
+    root_connection_option = 'nN,Rn,uE'
+    gnn_output_option = 'unified'
+    gnn_embedding_option = 'noninput_shared'
+    
+    node_info = gnn_util.get_all_node_info(env_name, gnn_node_option='nG,nB',
+                                           root_connection_option=root_connection_option,
+                                           gnn_output_option=gnn_output_option,
+                                           gnn_embedding_option=gnn_embedding_option)
+    ppo_agent = PPO(state_dim, action_dim, lr_actor, lr_critic, gamma, K_epochs, eps_clip, action_std, node_info)
 
     # preTrained weights directory
 

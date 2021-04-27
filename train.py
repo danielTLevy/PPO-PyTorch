@@ -9,7 +9,6 @@ import numpy as np
 import gym
 # import roboschool
 from environments import register
-from graph_util import mujoco_parser
 from graph_util import gnn_util
 
 # import pybullet_envs

@@ -127,6 +127,8 @@ class Embedder(nn.Module):
         self.node_embedders = {node_type:
                             nn.Linear(ob_size_dict[node_type],  embedding_dim).to(device)
                             for node_type in node_type_dict}
+        for node_type, layer in self.node_embedders.items():
+            super(Embedder, self).add_module(node_type, layer)
 
     def forward(self, state):
         embedded = torch.zeros(state.shape[0], self.n_nodes, self.embedding_dim).to(device)
@@ -134,8 +136,9 @@ class Embedder(nn.Module):
             node_input = torch.index_select(state, 1, obs_idx)
             embedded[:, node, :] =  self.node_embedders[self.node_to_type[node]](node_input)
         return embedded
-    
-    
+
+
+
 class GGNN(nn.Module):
     def __init__(self, hidden_dim, edge_idx):
         super(GGNN, self).__init__()
@@ -159,7 +162,7 @@ class GGNN(nn.Module):
         out = self.gnn(embedding_batched, edge_idx_batched)
         return out.view(batch_size, n_nodes, -1)
 
-        
+
 class ActionPredictor(nn.Module):
     def __init__(self, hidden_dim, action_dim, output_list):
         super(ActionPredictor, self).__init__()
@@ -176,6 +179,9 @@ class ActionPredictor(nn.Module):
         X_output = torch.index_select(X, 1, self.output_list)
         return self.tanh(self.action_output(X_output).squeeze())
 
+class Conv1D(nn.Module):
+    def __init__(self, embedding_dim, hidden_dim):
+        self.conv1 = nn.Conv1d(embedding_dim, )
 
 class NerveNet(nn.Module):
     def __init__(self, state_dim, action_dim, node_info):

@@ -73,7 +73,8 @@ class SnakeEnv(mujoco_env.MujocoEnv, utils.EzPickle):
 
     def viewer_setup(self):
         self.viewer.cam.distance = self.model.stat.extent * 1.2
-        body_name = 'podBody_' + str(int(np.ceil(self.num_body / 2)))
+        body_name_str = 'podBody_' + str(int(np.ceil(self.num_body / 2)))
+        body_name = body_name_str.encode('utf-8')
         self.viewer.cam.trackbodyid = self.model.body_names.index(body_name)
 
 

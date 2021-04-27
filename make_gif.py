@@ -7,6 +7,10 @@ import torch
 import numpy as np
 from PIL import Image
 
+from environments import register
+from graph_util import gnn_util
+
+
 import gym
 import roboschool
 
@@ -85,8 +89,15 @@ def save_gif_images(env_name, has_continuous_action_space, max_ep_len, action_st
         os.makedirs(gif_dir)
 
 
-
-    ppo_agent = PPO(state_dim, action_dim, lr_actor, lr_critic, gamma, K_epochs, eps_clip, has_continuous_action_space, action_std)
+    root_connection_option = 'nN,Rn,uE'
+    gnn_output_option = 'unified'
+    gnn_embedding_option = 'noninput_shared'
+    node_info = gnn_util.get_all_node_info(env_name, gnn_node_option='nG,nB',
+                                           root_connection_option=root_connection_option,
+                                           gnn_output_option=gnn_output_option,
+                                           gnn_embedding_option=gnn_embedding_option)
+    ppo_agent = PPO(state_dim, action_dim, lr_actor, lr_critic, gamma,
+                    K_epochs, eps_clip, action_std, node_info)
 
 
     # preTrained weights directory
