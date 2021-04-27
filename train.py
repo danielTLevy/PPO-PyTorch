@@ -23,7 +23,7 @@ from PPO import PPO
 
 def parse_args():
      parser = argparse.ArgumentParser(description='Train')
-     parser.add_argument('--run', type=int, help='unique run number', default='100')
+     parser.add_argument('--run', type=str, help='unique run number', default='100')
      parser.add_argument('--env', type=str, help='training environment', 
                          default='SnakeThree-v1')
      args = parser.parse_args()
