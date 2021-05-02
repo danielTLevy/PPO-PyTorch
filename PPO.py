@@ -183,8 +183,11 @@ class ActionPredictor(nn.Module):
 class LSTM(nn.Module):
     def __init__(self, embedding_dim, hidden_dim, bidirectional=False):
         super(LSTM, self).__init__()
-        self.hidden_dim = hidden_dim
-        self.lstm = nn.LSTM(input_size=embedding_dim, hidden_size=hidden_dim,
+        if bidirectional == False:
+            self.hidden_dim = hidden_dim
+        else:
+            self.hidden_dim = hidden_dim // 2
+        self.lstm = nn.LSTM(input_size=embedding_dim, hidden_size=self.hidden_dim,
                             num_layers=3, bias=True, bidirectional=bidirectional)
     
     def forward(self, embedding):
@@ -232,7 +235,7 @@ class NerveNet(nn.Module):
 
         #self.gnn = GGNN(self.hidden_dim, self.edge_idx).to(device)
         #self.gnn = Conv1D(self.embedding_dim, self.hidden_dim)
-        self.gnn = LSTM(self.embedding_dim, self.hidden_dim)
+        self.gnn = LSTM(self.embedding_dim, self.hidden_dim, bidirectional=True)
         self.action_predictor = ActionPredictor(self.hidden_dim, action_dim,
                                                 output_list=node_info['output_list']).to(device)
 
