@@ -139,6 +139,7 @@ class Embedder(nn.Module):
 
 
 
+
 class GGNN(nn.Module):
     def __init__(self, hidden_dim, edge_idx):
         super(GGNN, self).__init__()
@@ -179,6 +180,19 @@ class ActionPredictor(nn.Module):
         X_output = torch.index_select(X, 1, self.output_list)
         return self.tanh(self.action_output(X_output).squeeze())
 
+class LSTM(nn.Module):
+    def __init__(self, embedding_dim, hidden_dim, bidirectional=False):
+        super(LSTM, self).__init__()
+        self.hidden_dim = hidden_dim
+        self.lstm = nn.LSTM(input_size=embedding_dim, hidden_size=hidden_dim,
+                            num_layers=3, bias=True, bidirectional=bidirectional)
+    
+    def forward(self, embedding):
+        # Inputs of shape (seq_length, batch, input_size)
+        return self.lstm(embedding.transpose(0, 1))[0].transpose(0,1)
+
+
+
 class Conv1D(nn.Module):
     def __init__(self, embedding_dim, hidden_dim):
         super(Conv1D, self).__init__()
@@ -193,6 +207,7 @@ class Conv1D(nn.Module):
 
     def forward(self, embedding):
         # Convolutions done along node dimension
+        # Inputs of shape (batch size, channels, length)
         return self.convs(embedding.transpose(-2, -1)).transpose(-2, -1)
         
 
@@ -216,7 +231,8 @@ class NerveNet(nn.Module):
         self.edge_idx = torch.LongTensor(np.stack((receive_idx, send_idx))).to(device)
 
         #self.gnn = GGNN(self.hidden_dim, self.edge_idx).to(device)
-        self.gnn = Conv1D(self.embedding_dim, self.hidden_dim)
+        #self.gnn = Conv1D(self.embedding_dim, self.hidden_dim)
+        self.gnn = LSTM(self.embedding_dim, self.hidden_dim)
         self.action_predictor = ActionPredictor(self.hidden_dim, action_dim,
                                                 output_list=node_info['output_list']).to(device)
 
@@ -267,13 +283,14 @@ class PPO:
         
         self.buffer = RolloutBuffer()
 
-    
+        #self.policy = ActorCritic(state_dim, action_dim, action_std_init).to(device)
         self.policy = ActorCriticNerveNet(state_dim, action_dim, action_std_init, node_info).to(device)
         self.optimizer = torch.optim.Adam([
                         {'params': self.policy.actor.parameters(), 'lr': lr_actor},
                         {'params': self.policy.critic.parameters(), 'lr': lr_critic}
                     ])
 
+        #self.policy_old =  ActorCritic(state_dim, action_dim, action_std_init).to(device)
         self.policy_old = ActorCriticNerveNet(state_dim, action_dim, action_std_init, node_info).to(device)
         self.policy_old.load_state_dict(self.policy.state_dict())
         
